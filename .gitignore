@@ -1,0 +1,35 @@
+# Datasets (symlinked or local)
+datasets/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+
+# Results & logs (user-generated)
+results/
+logs/
+db/
+apps/frontend/node_modules/
+apps/frontend/dist/
+.env
+
+# Personal notes
+mentor_sugetsions.md
+
+# Arena user submissions (generated at runtime)
+libs/fl_core/research/attacks/submissions/
+libs/fl_core/research/defenses/submissions/

@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-slate-50: var(--c-slate-50);
+  --color-slate-100: var(--c-slate-100);
+  --color-slate-200: var(--c-slate-200);
+  --color-slate-300: var(--c-slate-300);
+  --color-slate-400: var(--c-slate-400);
+  --color-slate-500: var(--c-slate-500);
+  --color-slate-600: var(--c-slate-600);
+  --color-slate-700: var(--c-slate-700);
+  --color-slate-800: var(--c-slate-800);
+  --color-slate-900: var(--c-slate-900);
+}
+
+:root {
+  /* Light mode — Anthropic-style cream / pale yellow, inverted scale */
+  --c-slate-900: #faf3e0;
+  --c-slate-800: #f0e6c8;
+  --c-slate-700: #dfd1a8;
+  --c-slate-600: #c1b58c;
+  --c-slate-500: #8f8464;
+  --c-slate-400: #5c5340;
+  --c-slate-300: #3d3625;
+  --c-slate-200: #2a2418;
+  --c-slate-100: #1a1610;
+  --c-slate-50:  #0d0a05;
+}
+
+.dark {
+  /* Original Tailwind slate palette */
+  --c-slate-50:  #f8fafc;
+  --c-slate-100: #f1f5f9;
+  --c-slate-200: #e2e8f0;
+  --c-slate-300: #cbd5e1;
+  --c-slate-400: #94a3b8;
+  --c-slate-500: #64748b;
+  --c-slate-600: #475569;
+  --c-slate-700: #334155;
+  --c-slate-800: #1e293b;
+  --c-slate-900: #0f172a;
+}
+
+body {
+  margin: 0;
+  background-color: var(--c-slate-900);
+  color: var(--c-slate-50);
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  transition: background-color 0.15s ease;
+}
+
+* {
+  box-sizing: border-box;
+}

@@ -1,0 +1,49 @@
+[project]
+name = "fedarena"
+version = "0.1.0"
+description = "FedArena — Federated Learning Attack/Defense Arena"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0.1",
+    "pyyaml>=6.0.3",
+    "scipy>=1.14.0",
+    "scikit-learn>=1.5.0",
+    "torch>=2.5.1",
+    "torchvision>=0.20.1",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "sqlmodel>=0.0.22",
+    "aiosqlite>=0.20.0",
+    "tenseal>=0.3.16",
+    "pydantic-settings>=2.13.1",
+    "openai>=2.32.0",
+    "grpcio>=1.80.0",
+    "protobuf>=7.34.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "matplotlib>=3.9.0",
+    "ruff>=0.11.0",
+    "pytest-asyncio>=1.3.0",
+    "httpx>=0.28.1",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"apps/backend/runners/*.py" = ["E402"]
+"libs/fl_core/**/*.py" = ["E402"]
+"**/__init__.py" = ["F401"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+testpaths = ["apps/backend/tests"]

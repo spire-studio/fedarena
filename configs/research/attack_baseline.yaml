@@ -1,0 +1,50 @@
+# Attack research baseline — fixed environment
+# Only the attack algorithm changes; everything else stays constant.
+
+dataset:
+  name: CIFAR-10
+  distribution: non_iid
+  alpha: 0.5
+
+model:
+  name: CNN
+  input_shape: [32, 32, 3]
+  num_classes: 10
+
+federated:
+  num_clients: 10
+  num_rounds: 20
+  clients_per_round: 5
+  local_epochs: 5
+  learning_rate: 0.01
+  aggregation: fedavg
+
+attack:
+  enable: true
+  attacker_selector:
+    mode: ratio
+    ratio: 0.3
+    selection_policy: lowest_ids
+  attack_category: model
+  attack_type: research          # placeholder — overridden by runner
+  attack_params: {}
+
+defense:
+  enable: false                  # no defense — pure attack effectiveness test
+
+compression:
+  sparsification:
+    enable: false
+
+privacy:
+  homomorphic_encryption:
+    enable: false
+
+system:
+  mode: simulation
+  node_role: server
+
+logging:
+  log_dir: ./logs
+  save_results: true
+  results_dir: ./results/research
