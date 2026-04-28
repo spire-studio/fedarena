@@ -33,6 +33,7 @@ class SubmissionDetail(SubmissionResponse):
     code: str
     job_id: int | None = None
     results: dict | None = None
+    error: str | None = None
 
 
 # ── Jobs ─────────────────────────────────────────────────────

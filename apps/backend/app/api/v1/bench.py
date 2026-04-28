@@ -14,6 +14,7 @@ from ...db import get_session
 from ...models import BenchJob
 from ...services.agent.bench_planner import plan_experiments
 from ...services.bench_worker import run_bench
+from ...services.task_queue import get_queue
 
 router = APIRouter(prefix="/bench", tags=["bench"])
 
@@ -123,3 +124,18 @@ async def list_bench_jobs(
     stmt = select(BenchJob).order_by(BenchJob.id.desc()).limit(20)
     jobs = (await session.execute(stmt)).scalars().all()
     return [_build_response(j) for j in jobs]
+
+
+@router.post("/{job_id}/cancel")
+async def cancel_bench_job(
+    job_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Cancel a queued or running bench job."""
+    job = await session.get(BenchJob, job_id)
+    if not job:
+        raise HTTPException(404, "Bench job not found")
+    if job.status not in ("queued", "running"):
+        raise HTTPException(400, f"Cannot cancel job with status '{job.status}'")
+    get_queue().cancel(f"bench:{job_id}")
+    return {"ok": True}

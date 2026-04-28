@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -15,6 +16,7 @@ from sqlmodel import SQLModel
 
 from apps.backend.app.db import get_session
 from apps.backend.app.main import app
+from apps.backend.app.services.task_queue import init_queue, shutdown_queue
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 
@@ -38,6 +40,14 @@ async def setup_db():
     yield
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.drop_all)
+
+
+@pytest.fixture(autouse=True)
+def setup_queue():
+    """Initialize a fresh task queue for each test."""
+    init_queue(max_workers=1)
+    yield
+    shutdown_queue()
 
 
 @pytest_asyncio.fixture

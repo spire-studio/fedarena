@@ -1,6 +1,7 @@
 """Background evaluation worker.
 
-Runs arena evaluation in a thread pool so the async API stays responsive.
+Runs arena evaluation via the centralized task queue so only one
+GPU-bound job executes at a time.
 """
 
 from __future__ import annotations
@@ -22,7 +23,6 @@ logger = logging.getLogger("fedarena.evaluation")
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DB_PATH = PROJECT_ROOT / "db" / "fedarena.db"
 
-# Sync engine for the background thread (can't use async from a plain thread)
 _sync_engine = None
 _sync_engine_lock = threading.Lock()
 
@@ -37,7 +37,6 @@ def _get_sync_engine():
 
 
 def _update_job(job_id: int, **fields) -> None:
-    """Update job fields in a sync session."""
     engine = _get_sync_engine()
     with Session(engine) as session:
         job = session.get(EvaluationJob, job_id)
@@ -60,22 +59,43 @@ def _update_submission(submission_id: int, **fields) -> None:
 
 
 def run_evaluation(job_id: int, submission_id: int, method_name: str, role: str) -> None:
-    """Run evaluation in a background thread. Updates DB as it progresses."""
-    thread = threading.Thread(
-        target=_evaluation_worker,
-        args=(job_id, submission_id, method_name, role),
-        daemon=True,
+    """Submit evaluation to the GPU task queue."""
+    from .task_queue import get_queue
+
+    key = f"eval:{job_id}"
+
+    def on_cancel() -> None:
+        now = datetime.now(UTC)
+        _update_job(job_id, status="cancelled", completed_at=now)
+        _update_submission(submission_id, status="failed", updated_at=now)
+
+    get_queue().submit(
+        key,
+        "evaluation",
+        _evaluation_worker,
+        job_id,
+        submission_id,
+        method_name,
+        role,
+        on_cancel=on_cancel,
     )
-    thread.start()
 
 
-def _evaluation_worker(job_id: int, submission_id: int, method_name: str, role: str) -> None:
-    """The actual evaluation logic, runs in a background thread."""
-
+def _evaluation_worker(
+    job_id: int,
+    submission_id: int,
+    method_name: str,
+    role: str,
+    cancel_event: threading.Event,
+) -> None:
     def now() -> datetime:
         return datetime.now(UTC)
 
-    # Ensure libs and runners are importable
+    if cancel_event.is_set():
+        _update_job(job_id, status="cancelled", completed_at=now())
+        _update_submission(submission_id, status="failed", updated_at=now())
+        return
+
     libs_path = str(PROJECT_ROOT / "libs")
     runners_path = str(PROJECT_ROOT / "apps" / "backend" / "runners")
     for p in (libs_path, runners_path):
@@ -86,21 +106,16 @@ def _evaluation_worker(job_id: int, submission_id: int, method_name: str, role: 
     _update_submission(submission_id, status="evaluating", updated_at=now())
 
     try:
-        # Re-discover so the new submission is found.
-        # Don't clear existing registries — already-imported modules
-        # won't re-trigger __init_subclass__ on reimport.
         import fl_core.research.registry as reg
 
         reg._discovered = False
         reg._ensure_discovered()
 
-        # Verify method is registered
         if role == "attack":
             reg.get_attack(method_name)
         else:
             reg.get_defense(method_name)
 
-        # Load matrix
         matrix_path = PROJECT_ROOT / "results" / "arena" / "benchmark_matrix.json"
         if not matrix_path.exists():
             raise FileNotFoundError("Benchmark matrix not found. Run 'arena generate' first.")
@@ -125,6 +140,12 @@ def _evaluation_worker(job_id: int, submission_id: int, method_name: str, role: 
         NO_DEFENSE = "__none__"
 
         for i, opp in enumerate(opponents):
+            if cancel_event.is_set():
+                _update_job(job_id, status="cancelled", completed_at=now())
+                _update_submission(submission_id, status="failed", updated_at=now())
+                logger.info("Evaluation cancelled: %s", method_name)
+                return
+
             _update_job(
                 job_id,
                 completed_opponents=i,
@@ -153,7 +174,16 @@ def _evaluation_worker(job_id: int, submission_id: int, method_name: str, role: 
                         defense_method=dfn,
                     )
                     acc = metrics.get("final_accuracy")
-                    seed_results.append({"seed": seed, "final_accuracy": acc})
+                    global_res = metrics.get("global_results", {})
+                    seed_results.append(
+                        {
+                            "seed": seed,
+                            "final_accuracy": acc,
+                            "rounds": global_res.get("rounds", []),
+                            "accuracy_trajectory": global_res.get("global_accuracy", []),
+                            "loss_trajectory": global_res.get("global_loss", []),
+                        }
+                    )
                 except Exception as e:
                     logger.error("Seed %d failed: %s", seed, e)
                     seed_results.append({"seed": seed, "final_accuracy": None, "error": str(e)})
@@ -182,7 +212,6 @@ def _evaluation_worker(job_id: int, submission_id: int, method_name: str, role: 
         )
         _update_submission(submission_id, status="completed", updated_at=now())
 
-        # Save eval JSON file (same as CLI)
         eval_path = output_dir / f"eval_{method_name}.json"
         eval_path.parent.mkdir(parents=True, exist_ok=True)
         eval_path.write_text(

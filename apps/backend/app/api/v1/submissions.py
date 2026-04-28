@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -10,6 +11,7 @@ from ...db import get_session
 from ...models import EvaluationJob, Submission
 from ...schemas import SubmissionCreate, SubmissionDetail, SubmissionResponse
 from ...services.evaluation import run_evaluation
+from ...services.report import generate_markdown_report
 from ...services.submission import (
     remove_submission_files,
     validate_code,
@@ -119,6 +121,37 @@ async def get_submission(
         **submission.model_dump(),
         job_id=job_id,
         results=results,
+        error=job.error if job else None,
+    )
+
+
+@router.get("/{submission_id}/report")
+async def get_submission_report(
+    submission_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Download a Markdown evaluation report for a submission."""
+    submission = await session.get(Submission, submission_id)
+    if not submission:
+        raise HTTPException(404, "Submission not found")
+
+    import json
+
+    stmt = (
+        select(EvaluationJob)
+        .where(EvaluationJob.submission_id == submission_id)
+        .order_by(EvaluationJob.created_at.desc())
+    )
+    job = (await session.execute(stmt)).scalars().first()
+    results = json.loads(job.results_json) if job and job.results_json else None
+
+    markdown = generate_markdown_report(submission.model_dump(), results)
+    filename = f"report_{submission.method_name}.md"
+
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

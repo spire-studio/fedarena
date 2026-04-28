@@ -22,6 +22,7 @@ Built on **FastAPI + React + PyTorch**, with an OpenAI-compatible LLM integratio
 
 ## News
 
+- **2026-04-28** — **v0.2.0 released.** Phase 1 complete: task queue with concurrency control, draft persistence for prompt mode, training curve visualization, Markdown/PDF report export, failure diagnostics in UI, 72 backend tests.
 - **2026-04-20** — **v0.1.0 released.** Core arena loop complete: LLM-powered prompt mode with code review, benchmark matrix evaluation, leaderboard ranking, CI with 40+ backend tests.
 
 ## Key Features
@@ -226,18 +227,25 @@ fedarena/
 - [x] Bench: natural-language experiment planning & execution
 - [x] CI pipeline (lint, type-check, 40+ backend tests)
 - [x] Incremental result saving & stale job recovery
-- [ ] Task queue & concurrency control (replace bare threads)
-- [ ] Training round logs viewable in detail page
-- [ ] Auto-generated evaluation reports (Markdown / PDF export)
-- [ ] Docker Compose deployment (backend + frontend + GPU)
+- [x] Task queue & concurrency control (replace bare threads)
+- [x] Training round logs viewable in detail page
+- [x] Auto-generated evaluation reports (Markdown / PDF export)
+- [x] Failure diagnostics — surface error reasons & failed experiment details in UI
 
 ### Phase 2: Range / Scenario System
 
 - [ ] Scenario library — multiple datasets, non-IID levels, malicious client ratios, model architectures
 - [ ] Multi-metric scoring — Attack Success Rate, Accuracy Drop, Convergence Speed, Runtime Cost, confidence intervals
+- [ ] Multi-dimensional leaderboard — Overall Score, Effectiveness, Robustness, Stability, Runtime columns
+- [ ] Per-scenario leaderboards
 - [ ] Sandbox execution — container isolation, timeout, network & filesystem restrictions for user-submitted code
 - [ ] Method versioning — track iterations of the same attack/defense, side-by-side comparison
-- [ ] Per-scenario leaderboards
+- [ ] Experiment comparison — cross-run overlay charts, statistical significance tests
+- [ ] Analytical reports — LLM-generated strengths/weaknesses, failure analysis, baseline diff, next-step recommendations
+- [ ] Dashboard page — live arena status, active jobs, top methods, recent submissions
+- [ ] Navigation restructure — Dashboard / Scenarios / Arena / Bench / Leaderboard / Reports / Methods / Jobs
+- [ ] Arena UX improvements — left/right layout, template mode, evaluation intensity selection
+- [ ] Matrix interaction — filter by scenario, click cell for run details & training curves
 
 ### Phase 3: Platform
 
@@ -247,6 +255,7 @@ fedarena/
 - [ ] Resource quotas & scheduling (multi-GPU, multi-user)
 - [ ] Audit logging
 - [ ] Dataset & model plugin system for new FL scenarios
+- [ ] Public leaderboards & embeddable widgets
 
 <p align="center">
   <sub>FedArena is for research and educational use.</sub>

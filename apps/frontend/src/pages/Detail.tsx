@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle, XCircle, Clock, Download, FileText, AlertTriangle } from "lucide-react";
 import { api } from "../api/client";
 import type { SubmissionDetail, JobProgress } from "../api/client";
+import TrainingChart from "../components/TrainingChart";
+import { exportPdf } from "../utils/exportPdf";
 
 export default function Detail() {
   const { id } = useParams<{ id: string }>();
@@ -61,7 +63,28 @@ export default function Detail() {
             <p className="text-sm text-slate-400 mt-1">by {submission.author}</p>
           )}
         </div>
-        <StatusBadge status={submission.status} />
+        <div className="flex items-center gap-3">
+          {submission.status === "completed" && (
+            <div className="flex gap-1.5">
+              <a
+                href={api.getSubmissionReportUrl(submission.id)}
+                download
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Markdown
+              </a>
+              <button
+                onClick={() => exportPdf(submission)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                PDF
+              </button>
+            </div>
+          )}
+          <StatusBadge status={submission.status} />
+        </div>
       </div>
 
       {submission.description && (
@@ -92,6 +115,21 @@ export default function Detail() {
         </div>
       )}
 
+      {/* Error panel */}
+      {submission.status === "failed" && (submission.error || job?.error) && (
+        <div className="bg-red-950/30 border border-red-800/50 rounded-lg p-4 mb-6">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-red-400 mb-1">Evaluation Failed</p>
+              <pre className="text-xs text-red-300/80 font-mono whitespace-pre-wrap break-words">
+                {submission.error || job?.error}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Results table */}
       {submission.results && (
         <div className="mb-8">
@@ -118,13 +156,20 @@ export default function Detail() {
                         <td className="py-3 px-4 text-right font-mono text-slate-50">
                           {res.avg_final_accuracy != null
                             ? res.avg_final_accuracy.toFixed(4)
-                            : "FAIL"}
+                            : <span className="text-red-400" title={
+                                res.per_seed.find((s) => s.error)?.error || undefined
+                              }>FAIL</span>}
                         </td>
                         {multiSeed && (
-                          <td className="py-3 px-4 text-right text-slate-500 font-mono text-xs">
-                            {res.per_seed
-                              .map((s) => s.final_accuracy != null ? s.final_accuracy.toFixed(4) : "fail")
-                              .join(", ")}
+                          <td className="py-3 px-4 text-right font-mono text-xs">
+                            {res.per_seed.map((s, i) => (
+                              <span key={s.seed}>
+                                {i > 0 && ", "}
+                                {s.final_accuracy != null
+                                  ? <span className="text-slate-500">{s.final_accuracy.toFixed(4)}</span>
+                                  : <span className="text-red-400" title={s.error || undefined}>fail</span>}
+                              </span>
+                            ))}
                           </td>
                         )}
                       </tr>
@@ -152,6 +197,11 @@ export default function Detail() {
             ) : null;
           })()}
         </div>
+      )}
+
+      {/* Training curves */}
+      {submission.results && (
+        <TrainingChart results={submission.results} role={submission.role} />
       )}
 
       {/* Code */}

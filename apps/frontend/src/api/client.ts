@@ -31,11 +31,21 @@ export interface SubmissionDetail extends Submission {
   code: string;
   job_id: number | null;
   results: Record<string, OpponentResult> | null;
+  error: string | null;
+}
+
+export interface SeedResult {
+  seed: number;
+  final_accuracy: number | null;
+  error?: string | null;
+  rounds?: number[];
+  accuracy_trajectory?: number[];
+  loss_trajectory?: number[];
 }
 
 export interface OpponentResult {
   avg_final_accuracy: number | null;
-  per_seed: { seed: number; final_accuracy: number | null }[];
+  per_seed: SeedResult[];
 }
 
 export interface LeaderboardEntry {
@@ -91,6 +101,19 @@ export interface GenerateResponse {
   description: string;
 }
 
+export interface Draft {
+  id: number;
+  prompt: string;
+  status: string;
+  code: string | null;
+  role: string | null;
+  display_name: string | null;
+  description: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface BenchExperiment {
   name: string;
   attack_method: string | null;
@@ -141,6 +164,8 @@ export const api = {
 
   getSubmission: (id: number) =>
     request<SubmissionDetail>(`/submissions/${id}`),
+
+  getSubmissionReportUrl: (id: number) => `${BASE}/submissions/${id}/report`,
 
   deleteSubmission: (id: number) =>
     request<void>(`/submissions/${id}`, { method: "DELETE" }),

@@ -1,6 +1,6 @@
 """Background bench experiment worker.
 
-Runs a list of planned experiments sequentially in a thread.
+Runs a list of planned experiments sequentially via the centralized task queue.
 """
 
 from __future__ import annotations
@@ -47,18 +47,39 @@ def _update_bench_job(job_id: int, **fields) -> None:
 
 
 def run_bench(job_id: int, experiments: list[dict[str, Any]]) -> None:
-    """Launch bench experiments in a background thread."""
-    thread = threading.Thread(
-        target=_bench_worker,
-        args=(job_id, experiments),
-        daemon=True,
+    """Submit bench job to the GPU task queue."""
+    from .task_queue import get_queue
+
+    key = f"bench:{job_id}"
+
+    def on_cancel() -> None:
+        _update_bench_job(
+            job_id,
+            status="cancelled",
+            completed_at=datetime.now(UTC),
+        )
+
+    get_queue().submit(
+        key,
+        "bench",
+        _bench_worker,
+        job_id,
+        experiments,
+        on_cancel=on_cancel,
     )
-    thread.start()
 
 
-def _bench_worker(job_id: int, experiments: list[dict[str, Any]]) -> None:
+def _bench_worker(
+    job_id: int,
+    experiments: list[dict[str, Any]],
+    cancel_event: threading.Event,
+) -> None:
     def now() -> datetime:
         return datetime.now(UTC)
+
+    if cancel_event.is_set():
+        _update_bench_job(job_id, status="cancelled", completed_at=now())
+        return
 
     libs_path = str(PROJECT_ROOT / "libs")
     runners_path = str(PROJECT_ROOT / "apps" / "backend" / "runners")
@@ -86,6 +107,11 @@ def _bench_worker(job_id: int, experiments: list[dict[str, Any]]) -> None:
         all_results: list[dict[str, Any]] = []
 
         for i, exp in enumerate(experiments):
+            if cancel_event.is_set():
+                _update_bench_job(job_id, status="cancelled", completed_at=now())
+                logger.info("Bench job %d cancelled", job_id)
+                return
+
             exp_name = exp.get("name", f"exp_{i}")
             atk = exp.get("attack_method")
             dfn = exp.get("defense_method")
@@ -109,6 +135,7 @@ def _bench_worker(job_id: int, experiments: list[dict[str, Any]]) -> None:
                 )
                 acc = metrics.get("final_accuracy")
                 loss = metrics.get("final_loss")
+                global_res = metrics.get("global_results", {})
                 all_results.append(
                     {
                         "name": exp_name,
@@ -116,6 +143,9 @@ def _bench_worker(job_id: int, experiments: list[dict[str, Any]]) -> None:
                         "defense_method": dfn,
                         "final_accuracy": acc,
                         "final_loss": loss,
+                        "rounds": global_res.get("rounds", []),
+                        "accuracy_trajectory": global_res.get("global_accuracy", []),
+                        "loss_trajectory": global_res.get("global_loss", []),
                         "error": None,
                     }
                 )

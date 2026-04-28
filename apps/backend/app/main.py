@@ -18,7 +18,8 @@ from sqlmodel import select
 
 from .api.v1.router import api_router
 from .db import get_session, init_db
-from .models import EvaluationJob, Submission
+from .models import BenchJob, EvaluationJob, Submission
+from .services.task_queue import init_queue, shutdown_queue
 
 logger = logging.getLogger("fedarena.startup")
 
@@ -39,21 +40,32 @@ async def _recover_stale_jobs() -> None:
             if sub and sub.status in ("evaluating", "pending"):
                 sub.status = "failed"
                 session.add(sub)
-        if stale_jobs:
+        stale_bench = (
+            (await session.execute(select(BenchJob).where(BenchJob.status.in_(["running", "queued"])))).scalars().all()
+        )
+        for job in stale_bench:
+            job.status = "failed"
+            job.error = "Server restarted while job was running"
+            session.add(job)
+
+        total_stale = len(stale_jobs) + len(stale_bench)
+        if total_stale:
             await session.commit()
-            logger.info("Recovered %d stale jobs on startup", len(stale_jobs))
+            logger.info("Recovered %d stale jobs on startup", total_stale)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    init_queue(max_workers=1)
     await _recover_stale_jobs()
     yield
+    shutdown_queue()
 
 
 app = FastAPI(
     title="FedArena API",
-    version="0.1.0",
+    version="0.2.0",
     description="Attack/Defense evaluation arena for Federated Learning",
     lifespan=lifespan,
 )

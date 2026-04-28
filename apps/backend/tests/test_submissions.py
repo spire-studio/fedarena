@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
+
+from apps.backend.app.services.report import generate_markdown_report
 
 from .conftest import VALID_ATTACK_CODE, VALID_DEFENSE_CODE
 
@@ -237,6 +240,55 @@ class TestGetSubmission:
         resp = await client.get("/api/v1/submissions/999")
         assert resp.status_code == 404
 
+    async def test_get_includes_error(self, client: AsyncClient):
+        with (
+            patch("apps.backend.app.api.v1.submissions.write_submission_files"),
+            patch("apps.backend.app.api.v1.submissions.run_evaluation"),
+        ):
+            create_resp = await client.post(
+                "/api/v1/submissions",
+                json={
+                    "code": VALID_ATTACK_CODE,
+                    "role": "attack",
+                    "display_name": "Error Test",
+                },
+            )
+        data = create_resp.json()
+        sid = data["id"]
+        job_id = data["job_id"]
+
+        from apps.backend.app.models import EvaluationJob
+
+        from .conftest import test_session
+
+        async with test_session() as session:
+            job = await session.get(EvaluationJob, job_id)
+            job.status = "failed"
+            job.error = "CUDA out of memory"
+            session.add(job)
+            await session.commit()
+
+        resp = await client.get(f"/api/v1/submissions/{sid}")
+        assert resp.status_code == 200
+        assert resp.json()["error"] == "CUDA out of memory"
+
+    async def test_get_no_error_when_success(self, client: AsyncClient):
+        with (
+            patch("apps.backend.app.api.v1.submissions.write_submission_files"),
+            patch("apps.backend.app.api.v1.submissions.run_evaluation"),
+        ):
+            resp = await client.post(
+                "/api/v1/submissions",
+                json={
+                    "code": VALID_ATTACK_CODE,
+                    "role": "attack",
+                    "display_name": "OK Test",
+                },
+            )
+        sid = resp.json()["id"]
+        detail = await client.get(f"/api/v1/submissions/{sid}")
+        assert detail.json()["error"] is None
+
 
 @pytest.mark.asyncio
 class TestDeleteSubmission:
@@ -265,3 +317,189 @@ class TestDeleteSubmission:
     async def test_delete_not_found(self, client: AsyncClient):
         resp = await client.delete("/api/v1/submissions/999")
         assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+class TestSubmissionReport:
+    async def _create_with_results(self, client: AsyncClient) -> int:
+        with (
+            patch("apps.backend.app.api.v1.submissions.write_submission_files"),
+            patch("apps.backend.app.api.v1.submissions.run_evaluation"),
+        ):
+            resp = await client.post(
+                "/api/v1/submissions",
+                json={
+                    "code": VALID_ATTACK_CODE,
+                    "role": "attack",
+                    "display_name": "Report Test",
+                    "author": "tester",
+                    "description": "An attack for testing reports",
+                },
+            )
+        data = resp.json()
+        sid = data["id"]
+        job_id = data["job_id"]
+
+        from apps.backend.app.models import EvaluationJob
+
+        from .conftest import test_session
+
+        results = {
+            "baseline_fedavg": {
+                "avg_final_accuracy": 0.85,
+                "per_seed": [
+                    {
+                        "seed": 0,
+                        "final_accuracy": 0.85,
+                        "rounds": [1, 2, 3],
+                        "accuracy_trajectory": [0.3, 0.6, 0.85],
+                        "loss_trajectory": [2.1, 1.2, 0.5],
+                    }
+                ],
+            },
+            "__none__": {
+                "avg_final_accuracy": 0.92,
+                "per_seed": [{"seed": 0, "final_accuracy": 0.92}],
+            },
+        }
+        async with test_session() as session:
+            job = await session.get(EvaluationJob, job_id)
+            job.status = "completed"
+            job.results_json = json.dumps(results)
+            session.add(job)
+            await session.commit()
+
+        return sid
+
+    async def test_report_download(self, client: AsyncClient):
+        sid = await self._create_with_results(client)
+        resp = await client.get(f"/api/v1/submissions/{sid}/report")
+        assert resp.status_code == 200
+        assert "text/markdown" in resp.headers["content-type"]
+        assert "attachment" in resp.headers["content-disposition"]
+        body = resp.text
+        assert "# Evaluation Report: Report Test" in body
+        assert "arena_attack_test_atk" in body
+        assert "0.8500" in body
+        assert "fedavg" in body
+
+    async def test_report_not_found(self, client: AsyncClient):
+        resp = await client.get("/api/v1/submissions/999/report")
+        assert resp.status_code == 404
+
+    async def test_report_no_results(self, client: AsyncClient):
+        with (
+            patch("apps.backend.app.api.v1.submissions.write_submission_files"),
+            patch("apps.backend.app.api.v1.submissions.run_evaluation"),
+        ):
+            resp = await client.post(
+                "/api/v1/submissions",
+                json={
+                    "code": VALID_ATTACK_CODE,
+                    "role": "attack",
+                    "display_name": "No Results",
+                },
+            )
+        sid = resp.json()["id"]
+        resp = await client.get(f"/api/v1/submissions/{sid}/report")
+        assert resp.status_code == 200
+        body = resp.text
+        assert "# Evaluation Report: No Results" in body
+        assert "## Summary" not in body
+
+
+class TestReportGeneration:
+    def test_basic_report(self):
+        sub = {
+            "display_name": "My Attack",
+            "method_name": "arena_attack_my",
+            "role": "attack",
+            "author": "alice",
+            "status": "completed",
+            "created_at": "2026-01-15T10:00:00",
+            "description": "A smart attack",
+            "code": "class Foo:\n    pass\n",
+        }
+        results = {
+            "fedavg": {
+                "avg_final_accuracy": 0.75,
+                "per_seed": [{"seed": 0, "final_accuracy": 0.75}],
+            },
+        }
+        md = generate_markdown_report(sub, results)
+        assert "# Evaluation Report: My Attack" in md
+        assert "alice" in md
+        assert "0.7500" in md
+        assert "lower = stronger attack" in md
+        assert "```python" in md
+
+    def test_report_without_results(self):
+        sub = {
+            "display_name": "Pending",
+            "method_name": "arena_defense_pending",
+            "role": "defense",
+            "author": None,
+            "status": "pending",
+            "created_at": "2026-01-15T10:00:00",
+            "description": None,
+            "code": "class Foo:\n    pass\n",
+        }
+        md = generate_markdown_report(sub, None)
+        assert "# Evaluation Report: Pending" in md
+        assert "## Summary" not in md
+        assert "## Code" in md
+
+    def test_multi_seed_report(self):
+        sub = {
+            "display_name": "Multi",
+            "method_name": "arena_attack_multi",
+            "role": "attack",
+            "author": None,
+            "status": "completed",
+            "created_at": "2026-01-15T10:00:00",
+            "description": None,
+            "code": "pass",
+        }
+        results = {
+            "opp": {
+                "avg_final_accuracy": 0.80,
+                "per_seed": [
+                    {"seed": 0, "final_accuracy": 0.78},
+                    {"seed": 1, "final_accuracy": 0.82},
+                ],
+            },
+        }
+        md = generate_markdown_report(sub, results)
+        assert "Per Seed" in md
+        assert "0.7800" in md
+        assert "0.8200" in md
+
+    def test_trajectory_table(self):
+        sub = {
+            "display_name": "Traj",
+            "method_name": "arena_attack_traj",
+            "role": "attack",
+            "author": None,
+            "status": "completed",
+            "created_at": "2026-01-15T10:00:00",
+            "description": None,
+            "code": "pass",
+        }
+        results = {
+            "opp": {
+                "avg_final_accuracy": 0.9,
+                "per_seed": [
+                    {
+                        "seed": 0,
+                        "final_accuracy": 0.9,
+                        "rounds": [1, 2],
+                        "accuracy_trajectory": [0.5, 0.9],
+                        "loss_trajectory": [1.5, 0.3],
+                    }
+                ],
+            },
+        }
+        md = generate_markdown_report(sub, results)
+        assert "## Training Trajectories" in md
+        assert "vs opp" in md
+        assert "0.5000" in md
