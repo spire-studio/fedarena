@@ -23,6 +23,8 @@ export interface Submission {
   author: string | null;
   description: string | null;
   status: string;
+  method_group: string | null;
+  version: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -30,7 +32,7 @@ export interface Submission {
 export interface SubmissionDetail extends Submission {
   code: string;
   job_id: number | null;
-  results: Record<string, OpponentResult> | null;
+  results: Record<string, unknown> | null;
   error: string | null;
 }
 
@@ -41,11 +43,32 @@ export interface SeedResult {
   rounds?: number[];
   accuracy_trajectory?: number[];
   loss_trajectory?: number[];
+  max_accuracy?: number | null;
+  convergence_speed?: number | null;
+  stability?: number | null;
+  runtime_seconds?: number | null;
 }
 
 export interface OpponentResult {
   avg_final_accuracy: number | null;
+  accuracy_drop?: number | null;
+  baseline_accuracy?: number | null;
+  max_accuracy?: number | null;
+  avg_convergence_speed?: number | null;
+  avg_stability?: number | null;
+  avg_runtime_seconds?: number | null;
+  std_final_accuracy?: number | null;
   per_seed: SeedResult[];
+}
+
+export interface ResultsSummary {
+  avg_accuracy?: number;
+  avg_accuracy_drop?: number;
+  worst_case_accuracy?: number;
+  best_case_accuracy?: number;
+  avg_convergence_speed?: number;
+  avg_stability?: number;
+  avg_runtime_seconds?: number;
 }
 
 export interface LeaderboardEntry {
@@ -58,6 +81,27 @@ export interface LeaderboardEntry {
   avg_accuracy: number;
   opponent_scores: Record<string, number | null>;
   submitted_at: string;
+  avg_accuracy_drop?: number | null;
+  worst_case_accuracy?: number | null;
+  avg_convergence_speed?: number | null;
+  avg_stability?: number | null;
+  version?: number | null;
+  has_older_versions?: boolean;
+}
+
+export interface VersionInfo {
+  id: number;
+  version: number;
+  method_name: string;
+  display_name: string;
+  status: string;
+  avg_accuracy: number | null;
+  created_at: string;
+}
+
+export interface AnalysisResponse {
+  analysis: string;
+  cached: boolean;
 }
 
 export interface JobProgress {
@@ -73,12 +117,27 @@ export interface JobProgress {
   completed_at: string | null;
 }
 
+export interface MatrixCellData {
+  avg_final_accuracy: number | null;
+  per_seed?: { seed: number; final_accuracy: number | null; error?: string | null }[];
+  seeds_succeeded?: number;
+}
+
 export interface MatrixData {
   attacks: string[];
   defenses: string[];
-  matrix: Record<string, Record<string, { avg_final_accuracy: number | null }>>;
+  matrix: Record<string, Record<string, MatrixCellData>>;
   config: string | null;
   seeds: number[] | null;
+  scenario_id: string | null;
+}
+
+export interface ScenarioInfo {
+  id: string;
+  name: string;
+  description: string;
+  has_matrix: boolean;
+  is_default: boolean;
 }
 
 export interface AgentConfig {
@@ -133,6 +192,7 @@ export interface BenchJob {
   error: string | null;
   started_at: string | null;
   completed_at: string | null;
+  created_at: string | null;
 }
 
 export interface BenchResult {
@@ -144,9 +204,51 @@ export interface BenchResult {
   error: string | null;
 }
 
+export interface TopMethod {
+  submission_id: number;
+  display_name: string;
+  method_name: string;
+  author: string | null;
+  avg_accuracy: number;
+}
+
+export interface DashboardData {
+  total_submissions: number;
+  completed_evaluations: number;
+  failed_evaluations: number;
+  active_jobs: number;
+  queue_pending: number;
+  top_attack: TopMethod | null;
+  top_defense: TopMethod | null;
+  recent_submissions: {
+    id: number;
+    display_name: string;
+    method_name: string;
+    role: string;
+    status: string;
+    created_at: string;
+  }[];
+}
+
+export interface JobListItem {
+  id: number;
+  job_type: "evaluation" | "bench";
+  status: string;
+  label: string;
+  submission_id: number | null;
+  progress: string | null;
+  error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
 // ── API functions ──────────────────────────────────────────
 
 export const api = {
+  // Dashboard
+  getDashboard: () => request<DashboardData>("/dashboard"),
+
   // Submissions
   createSubmission: (data: {
     code: string;
@@ -154,6 +256,8 @@ export const api = {
     display_name: string;
     author?: string;
     description?: string;
+    num_seeds?: number;
+    update_existing?: boolean;
   }) => request<SubmissionDetail>("/submissions", {
     method: "POST",
     body: JSON.stringify(data),
@@ -167,17 +271,34 @@ export const api = {
 
   getSubmissionReportUrl: (id: number) => `${BASE}/submissions/${id}/report`,
 
+  getVersions: (id: number) =>
+    request<VersionInfo[]>(`/submissions/${id}/versions`),
+
   deleteSubmission: (id: number) =>
     request<void>(`/submissions/${id}`, { method: "DELETE" }),
 
+  // Analysis
+  getAnalysis: (submissionId: number, regenerate?: boolean) =>
+    request<AnalysisResponse>(
+      `/submissions/${submissionId}/analysis${regenerate ? "?regenerate=true" : ""}`
+    ),
+
+  // Scenarios
+  getScenarios: () => request<ScenarioInfo[]>("/scenarios"),
+
   // Leaderboard
-  getLeaderboard: (role: string) =>
-    request<LeaderboardEntry[]>(`/leaderboard?role=${role}`),
+  getLeaderboard: (role: string, sortBy?: string, scenario?: string, showAllVersions?: boolean) =>
+    request<LeaderboardEntry[]>(
+      `/leaderboard?role=${role}${sortBy ? `&sort_by=${sortBy}` : ""}${scenario ? `&scenario=${scenario}` : ""}${showAllVersions ? "&show_all_versions=true" : ""}`
+    ),
 
   // Matrix
-  getMatrix: () => request<MatrixData>("/matrix"),
+  getMatrix: (scenario?: string) =>
+    request<MatrixData>(`/matrix${scenario ? `?scenario=${scenario}` : ""}`),
 
   // Jobs
+  listJobs: () => request<JobListItem[]>("/jobs"),
+
   getJobProgress: (jobId: number) =>
     request<JobProgress>(`/jobs/${jobId}/progress`),
 

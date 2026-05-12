@@ -223,11 +223,13 @@ def _run_single_seed(
             fw.server.aggregator = strategy
 
         # -- Phase 3: run training ---
+        t0 = time.time()
         if not fw.run_federated_training():
             return {"error": "run_federated_training failed", "seed": seed}
 
         # -- Phase 4: collect metrics ---
         metrics = _extract_metrics(fw)
+        metrics["runtime_seconds"] = round(time.time() - t0, 2)
         metrics["seed"] = seed
         metrics["experiment_name"] = experiment_name
         if attack_method:
@@ -266,15 +268,31 @@ def _extract_metrics(fw: Any) -> dict[str, Any]:
         metrics["global_results"] = global_results
         metrics["client_results"] = client_results
 
-        # Extract key scalars
         acc_list = global_results.get("global_accuracy", [])
         loss_list = global_results.get("global_loss", [])
         if acc_list:
             metrics["final_accuracy"] = acc_list[-1]
             metrics["initial_accuracy"] = acc_list[0]
             metrics["accuracy_trajectory"] = acc_list
+            metrics["max_accuracy"] = max(acc_list)
+
+            if acc_list[-1] > 0:
+                threshold = 0.9 * acc_list[-1]
+                for i, a in enumerate(acc_list):
+                    if a >= threshold:
+                        metrics["convergence_speed"] = i + 1
+                        break
+
+            if len(acc_list) >= 5:
+                tail = acc_list[-5:]
+            else:
+                tail = acc_list
+            mean_t = sum(tail) / len(tail)
+            metrics["stability"] = (sum((x - mean_t) ** 2 for x in tail) / len(tail)) ** 0.5
+
         if loss_list:
             metrics["final_loss"] = loss_list[-1]
+            metrics["loss_trajectory"] = loss_list
 
     return metrics
 
@@ -301,10 +319,13 @@ def _build_summary(
         summary["errors"] = [m.get("error", "unknown") for m in failed]
         return summary
 
-    # Average scalar metrics
     final_accs = [m["final_accuracy"] for m in valid if "final_accuracy" in m]
     final_losses = [m["final_loss"] for m in valid if "final_loss" in m]
     initial_accs = [m["initial_accuracy"] for m in valid if "initial_accuracy" in m]
+    max_accs = [m["max_accuracy"] for m in valid if "max_accuracy" in m]
+    conv_speeds = [m["convergence_speed"] for m in valid if m.get("convergence_speed") is not None]
+    stabilities = [m["stability"] for m in valid if "stability" in m]
+    runtimes = [m["runtime_seconds"] for m in valid if "runtime_seconds" in m]
 
     metrics: dict[str, Any] = {}
     if final_accs:
@@ -315,12 +336,24 @@ def _build_summary(
         metrics["avg_accuracy_drop"] = sum(initial_accs) / len(initial_accs) - sum(final_accs) / len(final_accs)
     if final_losses:
         metrics["avg_final_loss"] = sum(final_losses) / len(final_losses)
+    if max_accs:
+        metrics["avg_max_accuracy"] = sum(max_accs) / len(max_accs)
+    if conv_speeds:
+        metrics["avg_convergence_speed"] = sum(conv_speeds) / len(conv_speeds)
+    if stabilities:
+        metrics["avg_stability"] = sum(stabilities) / len(stabilities)
+    if runtimes:
+        metrics["avg_runtime_seconds"] = sum(runtimes) / len(runtimes)
 
     metrics["per_seed"] = [
         {
             "seed": m.get("seed"),
             "final_accuracy": m.get("final_accuracy"),
             "final_loss": m.get("final_loss"),
+            "max_accuracy": m.get("max_accuracy"),
+            "convergence_speed": m.get("convergence_speed"),
+            "stability": m.get("stability"),
+            "runtime_seconds": m.get("runtime_seconds"),
         }
         for m in valid
     ]

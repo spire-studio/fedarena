@@ -88,6 +88,7 @@ def generate_matrix(
     config_path: Path,
     seeds: list[int],
     output_dir: Path,
+    scenario_id: str | None = None,
 ) -> dict[str, Any]:
     """Generate the full benchmark matrix."""
     from fl_core.research.registry import _ensure_discovered, list_attacks, list_defenses
@@ -174,6 +175,7 @@ def generate_matrix(
         "seeds": seeds,
         "attacks": [a or NO_ATTACK for a in attacks],
         "defenses": [d or NO_DEFENSE for d in defenses],
+        "scenario_id": scenario_id,
         "matrix": matrix,
     }
     matrix_path.write_text(json.dumps(matrix_meta, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -183,6 +185,25 @@ def generate_matrix(
 
     print(f"\n  Matrix saved to: {matrix_path}")
     return matrix_meta
+
+
+def generate_matrix_for_scenario(
+    scenario_id: str,
+    seeds: list[int],
+) -> dict[str, Any]:
+    """Generate benchmark matrix for a specific scenario."""
+    from fl_core.research.scenarios import get_config_path, get_matrix_path, get_scenario
+
+    scenario = get_scenario(scenario_id)
+    if scenario is None:
+        raise ValueError(f"Unknown scenario: {scenario_id}")
+
+    config_path = get_config_path(scenario_id)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config not found: {config_path}")
+
+    output_dir = get_matrix_path(scenario_id).parent
+    return generate_matrix(config_path, seeds, output_dir, scenario_id=scenario_id)
 
 
 def evaluate_method(
@@ -389,16 +410,21 @@ def main() -> int:
 
     # generate
     gen = sub.add_parser("generate", help="Generate benchmark matrix")
-    gen.add_argument("--config", type=Path, required=True)
+    gen.add_argument("--config", type=Path, default=None)
+    gen.add_argument("--scenario", type=str, default=None)
     gen.add_argument("--seeds", type=str, default="0")
-    gen.add_argument("--output", type=Path, default=Path("results/arena"))
+    gen.add_argument("--output", type=Path, default=None)
+
+    # generate-all
+    sub.add_parser("generate-all", help="Generate matrices for all scenarios")
 
     # evaluate
     evl = sub.add_parser("evaluate", help="Evaluate a new method")
     evl.add_argument("--method", required=True)
     evl.add_argument("--role", required=True, choices=("attack", "defense"))
-    evl.add_argument("--config", type=Path, required=True)
-    evl.add_argument("--matrix", type=Path, required=True)
+    evl.add_argument("--config", type=Path, default=None)
+    evl.add_argument("--scenario", type=str, default=None)
+    evl.add_argument("--matrix", type=Path, default=None)
     evl.add_argument("--seeds", type=str, default="0")
     evl.add_argument("--output", type=Path, default=Path("results/arena"))
 
@@ -410,9 +436,32 @@ def main() -> int:
     _ensure_discovered()
 
     if args.command == "generate":
-        generate_matrix(args.config, seeds, args.output)
+        if args.scenario:
+            generate_matrix_for_scenario(args.scenario, seeds)
+        elif args.config:
+            output = args.output or Path("results/arena")
+            generate_matrix(args.config, seeds, output)
+        else:
+            parser.error("--scenario or --config is required for generate")
+    elif args.command == "generate-all":
+        from fl_core.research.scenarios import list_scenarios
+
+        for s in list_scenarios():
+            print(f"\n>>> Generating matrix for scenario: {s.id}")
+            generate_matrix_for_scenario(s.id, seeds)
     elif args.command == "evaluate":
-        evaluate_method(args.method, args.role, args.config, args.matrix, seeds, args.output)
+        if args.scenario:
+            from fl_core.research.scenarios import get_config_path, get_matrix_path_with_fallback
+
+            config = args.config or get_config_path(args.scenario)
+            matrix = args.matrix or get_matrix_path_with_fallback(args.scenario)
+            if matrix is None:
+                parser.error(f"No matrix found for scenario {args.scenario}")
+            evaluate_method(args.method, args.role, config, matrix, seeds, args.output)
+        elif args.config and args.matrix:
+            evaluate_method(args.method, args.role, args.config, args.matrix, seeds, args.output)
+        else:
+            parser.error("--scenario or (--config + --matrix) required for evaluate")
 
     return 0
 
