@@ -54,9 +54,34 @@ async def _recover_stale_jobs() -> None:
             logger.info("Recovered %d stale jobs on startup", total_stale)
 
 
+async def _migrate_schema() -> None:
+    """Add columns introduced after the initial schema."""
+    from .db import engine
+
+    from sqlalchemy import text
+
+    async with engine.begin() as conn:
+        for stmt in [
+            "ALTER TABLE evaluation_jobs ADD COLUMN analysis_text TEXT",
+            "ALTER TABLE evaluation_jobs ADD COLUMN total_scenarios INTEGER DEFAULT 0",
+            "ALTER TABLE evaluation_jobs ADD COLUMN completed_scenarios INTEGER DEFAULT 0",
+            "ALTER TABLE evaluation_jobs ADD COLUMN current_scenario TEXT",
+            "ALTER TABLE submissions ADD COLUMN method_group TEXT",
+            "ALTER TABLE submissions ADD COLUMN version INTEGER",
+        ]:
+            try:
+                await conn.execute(text(stmt))
+            except Exception:
+                pass
+        await conn.execute(
+            text("UPDATE submissions SET method_group = method_name, version = 1 WHERE method_group IS NULL")
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await _migrate_schema()
     init_queue(max_workers=1)
     await _recover_stale_jobs()
     yield
@@ -65,14 +90,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="FedArena API",
-    version="0.2.0",
+    version="0.3.0",
     description="Attack/Defense evaluation arena for Federated Learning",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -470,9 +470,8 @@ class TestReportGeneration:
             },
         }
         md = generate_markdown_report(sub, results)
-        assert "Per Seed" in md
-        assert "0.7800" in md
-        assert "0.8200" in md
+        assert "Per-Opponent Results" in md
+        assert "0.8000" in md
 
     def test_trajectory_table(self):
         sub = {

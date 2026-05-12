@@ -62,7 +62,7 @@ class MyAttack(ResearchAttackStrategy):
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    React + Vite Frontend                      │
-│         (Leaderboard · Arena · Bench · Detail)               │
+│    (Dashboard · Arena · Bench · Leaderboard · Jobs · Detail) │
 └───────────────────────────┬──────────────────────────────────┘
                             │ REST + polling
 ┌───────────────────────────▼──────────────────────────────────┐
@@ -201,7 +201,7 @@ fedarena/
 │   │   │   └── config.py        # Pydantic settings (.env loading)
 │   │   └── runners/             # FL runtime (core_runtime.py)
 │   └── frontend/                # React + Vite + Tailwind + Radix UI
-│       └── src/pages/           # Leaderboard, Arena, Bench, Detail
+│       └── src/pages/           # Dashboard, Arena, Bench, Leaderboard, Jobs, Detail
 ├── libs/fl_core/                # FL core library
 │   ├── research/                # Arena engine (registry, runner, arena, base classes)
 │   │   ├── attacks/             # Baseline + user submissions
@@ -234,21 +234,21 @@ fedarena/
 
 ### Phase 2: Range / Scenario System
 
-- [ ] Scenario library — multiple datasets, non-IID levels, malicious client ratios, model architectures
-- [ ] Multi-metric scoring — Attack Success Rate, Accuracy Drop, Convergence Speed, Runtime Cost, confidence intervals
-- [ ] Multi-dimensional leaderboard — Overall Score, Effectiveness, Robustness, Stability, Runtime columns
-- [ ] Per-scenario leaderboards
-- [ ] Sandbox execution — container isolation, timeout, network & filesystem restrictions for user-submitted code
-- [ ] Method versioning — track iterations of the same attack/defense, side-by-side comparison
-- [ ] Experiment comparison — cross-run overlay charts, statistical significance tests
-- [ ] Analytical reports — LLM-generated strengths/weaknesses, failure analysis, baseline diff, next-step recommendations
-- [ ] Dashboard page — live arena status, active jobs, top methods, recent submissions
-- [ ] Navigation restructure — Dashboard / Scenarios / Arena / Bench / Leaderboard / Reports / Methods / Jobs
-- [ ] Arena UX improvements — left/right layout, template mode, evaluation intensity selection
-- [ ] Matrix interaction — filter by scenario, click cell for run details & training curves
+- [x] Scenario library — multiple datasets, non-IID levels, malicious client ratios, model architectures
+- [x] Multi-metric scoring — Accuracy Drop, Convergence Speed, Stability, Runtime Cost, Max Accuracy, per-opponent and summary aggregation
+- [x] Multi-dimensional leaderboard — Avg Accuracy, Accuracy Drop, Worst Case, Convergence, Stability columns with sort_by support
+- [x] Per-scenario leaderboards
+- [x] Method versioning — track iterations of the same attack/defense, side-by-side comparison
+- [x] Experiment comparison — cross-run overlay charts, side-by-side metrics
+- [x] Analytical reports — LLM-generated strengths/weaknesses, baseline comparison, recommendations, cached per evaluation
+- [x] Dashboard page — live arena status, active jobs, top methods, recent submissions
+- [x] Navigation restructure — Dashboard / Scenarios / Arena / Bench / Leaderboard / Reports / Methods / Jobs
+- [x] Arena UX improvements — left/right layout, template mode, evaluation intensity selection
+- [x] Matrix interaction — filter by scenario, click cell for run details & per-seed breakdown
 
 ### Phase 3: Platform
 
+- [ ] Sandbox execution — container isolation, timeout, network & filesystem restrictions for user-submitted code
 - [ ] User & team accounts with permissions
 - [ ] Challenge mode — fixed scenarios, time-limited competitions, hidden test sets
 - [ ] Course mode — guided exercises for FL security education

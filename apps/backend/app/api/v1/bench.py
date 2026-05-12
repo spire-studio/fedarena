@@ -42,6 +42,7 @@ class BenchJobResponse(BaseModel):
     error: str | None
     started_at: str | None
     completed_at: str | None
+    created_at: str | None
 
 
 def _build_response(job: BenchJob) -> BenchJobResponse:
@@ -64,6 +65,7 @@ def _build_response(job: BenchJob) -> BenchJobResponse:
         error=job.error,
         started_at=str(job.started_at) if job.started_at else None,
         completed_at=str(job.completed_at) if job.completed_at else None,
+        created_at=str(job.bench_created_at),
     )
 
 

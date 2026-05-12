@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Loader2, CheckCircle, XCircle, Clock, Download, FileText, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle, XCircle, Clock, Download, FileText, AlertTriangle, Sparkles, RefreshCw } from "lucide-react";
 import { api } from "../api/client";
-import type { SubmissionDetail, JobProgress } from "../api/client";
+import type { SubmissionDetail, JobProgress, ResultsSummary, OpponentResult, VersionInfo } from "../api/client";
+import ScenarioSelector from "../components/ScenarioSelector";
 import TrainingChart from "../components/TrainingChart";
 import { exportPdf } from "../utils/exportPdf";
 
@@ -12,18 +13,24 @@ export default function Detail() {
   const [job, setJob] = useState<JobProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [scenario, setScenario] = useState("cifar10_noniid");
+  const [versions, setVersions] = useState<VersionInfo[]>([]);
 
-  // Fetch submission
   useEffect(() => {
     if (!id) return;
     api
       .getSubmission(Number(id))
-      .then(setSubmission)
+      .then((s) => {
+        setSubmission(s);
+        api.getVersions(s.id).then(setVersions).catch(() => {});
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [id]);
 
-  // Poll job progress while evaluating
   useEffect(() => {
     if (!submission?.job_id) return;
     if (submission.status === "completed" || submission.status === "failed") return;
@@ -32,7 +39,6 @@ export default function Detail() {
       api.getJobProgress(submission.job_id!).then((j) => {
         setJob(j);
         if (j.status === "completed" || j.status === "failed") {
-          // Refresh submission to get results
           api.getSubmission(Number(id)).then(setSubmission);
         }
       });
@@ -42,11 +48,33 @@ export default function Detail() {
     return () => clearInterval(interval);
   }, [submission?.job_id, submission?.status, id]);
 
+  const handleAnalysis = (regenerate = false) => {
+    if (!submission) return;
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    api
+      .getAnalysis(submission.id, regenerate)
+      .then((res) => setAnalysis(res.analysis))
+      .catch((e) => setAnalysisError(e.message))
+      .finally(() => setAnalysisLoading(false));
+  };
+
   if (loading) return <p className="text-slate-400">Loading...</p>;
   if (error) return <p className="text-red-400">{error}</p>;
   if (!submission) return <p className="text-red-400">Not found</p>;
 
   const isRunning = submission.status === "evaluating" || submission.status === "pending";
+
+  const rawResults = submission.results;
+  const hasScenarios = rawResults && "scenarios" in rawResults;
+  const scenarioResults: Record<string, OpponentResult> | null = hasScenarios
+    ? (rawResults as Record<string, unknown>).scenarios?.[scenario] as Record<string, OpponentResult> | null ?? null
+    : rawResults as Record<string, OpponentResult> | null;
+
+  const summary: ResultsSummary | null = scenarioResults?.["__summary__"] as ResultsSummary | null;
+  const opponentEntries = scenarioResults
+    ? Object.entries(scenarioResults).filter(([k]) => k !== "__summary__")
+    : [];
 
   return (
     <div>
@@ -57,7 +85,14 @@ export default function Detail() {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-50">{submission.display_name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-50">{submission.display_name}</h1>
+            {(submission.version ?? 1) > 1 && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-600/20 text-amber-400 border border-amber-600/40">
+                v{submission.version}
+              </span>
+            )}
+          </div>
           <p className="text-sm text-slate-500 font-mono mt-1">{submission.method_name}</p>
           {submission.author && (
             <p className="text-sm text-slate-400 mt-1">by {submission.author}</p>
@@ -89,6 +124,16 @@ export default function Detail() {
 
       {submission.description && (
         <p className="text-slate-400 mb-6">{submission.description}</p>
+      )}
+
+      {hasScenarios && (
+        <div className="flex items-center gap-2 mb-6">
+          <span className="text-xs text-slate-500">Scenario:</span>
+          <ScenarioSelector value={scenario} onChange={setScenario} />
+          {!scenarioResults && (
+            <span className="text-xs text-slate-500">No results for this scenario</span>
+          )}
+        </div>
       )}
 
       {/* Progress bar while evaluating */}
@@ -130,78 +175,164 @@ export default function Detail() {
         </div>
       )}
 
-      {/* Results table */}
-      {submission.results && (
-        <div className="mb-8">
-          <h2 className="text-lg font-semibold text-slate-50 mb-4">Results</h2>
-          {(() => {
-            const entries = Object.entries(submission.results!);
-            const multiSeed = entries.some(([, res]) => res.per_seed.length > 1);
-            return (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-700 text-slate-400">
-                      <th className="text-left py-3 px-4">Opponent</th>
-                      <th className="text-right py-3 px-4">Accuracy</th>
-                      {multiSeed && <th className="text-right py-3 px-4">Per Seed</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map(([opp, res]) => (
-                      <tr key={opp} className="border-b border-slate-800">
-                        <td className="py-3 px-4 text-slate-300 font-mono text-xs">
-                          {opp.replace("__none__", "none").replace("baseline_", "")}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono text-slate-50">
-                          {res.avg_final_accuracy != null
-                            ? res.avg_final_accuracy.toFixed(4)
-                            : <span className="text-red-400" title={
-                                res.per_seed.find((s) => s.error)?.error || undefined
-                              }>FAIL</span>}
-                        </td>
-                        {multiSeed && (
-                          <td className="py-3 px-4 text-right font-mono text-xs">
-                            {res.per_seed.map((s, i) => (
-                              <span key={s.seed}>
-                                {i > 0 && ", "}
-                                {s.final_accuracy != null
-                                  ? <span className="text-slate-500">{s.final_accuracy.toFixed(4)}</span>
-                                  : <span className="text-red-400" title={s.error || undefined}>fail</span>}
-                              </span>
-                            ))}
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            );
-          })()}
+      {/* Summary metrics cards */}
+      {summary && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          <MetricCard label="Avg Accuracy" value={summary.avg_accuracy} fmt={(v) => v.toFixed(4)}
+            sub={submission.role === "attack" ? "lower = stronger" : "higher = stronger"} />
+          <MetricCard label="Acc. Drop" value={summary.avg_accuracy_drop} fmt={(v) => v.toFixed(4)} />
+          <MetricCard label="Worst Case" value={summary.worst_case_accuracy} fmt={(v) => v.toFixed(4)} />
+          <MetricCard label="Best Case" value={summary.best_case_accuracy} fmt={(v) => v.toFixed(4)} />
+          <MetricCard label="Convergence" value={summary.avg_convergence_speed} fmt={(v) => `${Math.round(v)} rounds`} />
+          <MetricCard label="Stability" value={summary.avg_stability} fmt={(v) => v.toFixed(4)} sub="lower = more stable" />
+        </div>
+      )}
 
-          {/* Avg summary */}
-          {(() => {
-            const accs = Object.values(submission.results!)
-              .map((r) => r.avg_final_accuracy)
-              .filter((a): a is number => a != null);
-            const avg = accs.length ? accs.reduce((a, b) => a + b, 0) / accs.length : null;
-            return avg != null ? (
-              <div className="mt-4 p-4 bg-slate-800 rounded-lg">
-                <span className="text-slate-400 text-sm">Overall avg accuracy: </span>
-                <span className="text-slate-50 font-mono font-bold">{avg.toFixed(4)}</span>
-                <span className="text-slate-500 text-xs ml-2">
-                  ({submission.role === "attack" ? "lower = stronger" : "higher = stronger"})
-                </span>
-              </div>
-            ) : null;
-          })()}
+      {/* Results table */}
+      {opponentEntries.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-slate-50 mb-4">Per-Opponent Results</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-700 text-slate-400">
+                  <th className="text-left py-3 px-3">Opponent</th>
+                  <th className="text-right py-3 px-3">Accuracy</th>
+                  <th className="text-right py-3 px-3">Baseline</th>
+                  <th className="text-right py-3 px-3">Acc. Drop</th>
+                  <th className="text-right py-3 px-3">Max Acc</th>
+                  <th className="text-right py-3 px-3">Conv.</th>
+                  <th className="text-right py-3 px-3">Stability</th>
+                  <th className="text-right py-3 px-3">Runtime</th>
+                </tr>
+              </thead>
+              <tbody>
+                {opponentEntries.map(([opp, res]) => (
+                  <tr key={opp} className="border-b border-slate-800">
+                    <td className="py-3 px-3 text-slate-300 font-mono text-xs">
+                      {opp.replace("__none__", "none").replace("baseline_", "")}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-50">
+                      {res.avg_final_accuracy != null
+                        ? res.avg_final_accuracy.toFixed(4)
+                        : <span className="text-red-400" title={
+                            res.per_seed.find((s) => s.error)?.error || undefined
+                          }>FAIL</span>}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-500">
+                      {res.baseline_accuracy != null ? res.baseline_accuracy.toFixed(4) : "-"}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-400">
+                      {res.accuracy_drop != null ? res.accuracy_drop.toFixed(4) : "-"}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-400">
+                      {res.max_accuracy != null ? res.max_accuracy.toFixed(4) : "-"}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-400">
+                      {res.avg_convergence_speed != null ? `${Math.round(res.avg_convergence_speed)}` : "-"}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-400">
+                      {res.avg_stability != null ? res.avg_stability.toFixed(4) : "-"}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-400">
+                      {res.avg_runtime_seconds != null ? `${res.avg_runtime_seconds.toFixed(1)}s` : "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {/* Training curves */}
       {submission.results && (
-        <TrainingChart results={submission.results} role={submission.role} />
+        <TrainingChart results={Object.fromEntries(opponentEntries)} role={submission.role} />
+      )}
+
+      {/* LLM Analysis */}
+      {submission.status === "completed" && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-slate-50">Analysis</h2>
+            <div className="flex gap-1.5">
+              {!analysis && !analysisLoading && (
+                <button
+                  onClick={() => handleAnalysis(false)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-purple-600/20 text-purple-400 border border-purple-600/40 hover:bg-purple-600/30 transition-colors"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Generate Analysis
+                </button>
+              )}
+              {analysis && !analysisLoading && (
+                <button
+                  onClick={() => handleAnalysis(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Regenerate
+                </button>
+              )}
+            </div>
+          </div>
+          {analysisLoading && (
+            <div className="flex items-center gap-2 p-4 bg-slate-800 rounded-lg">
+              <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+              <span className="text-sm text-slate-400">Generating analysis...</span>
+            </div>
+          )}
+          {analysisError && (
+            <p className="text-sm text-red-400">{analysisError}</p>
+          )}
+          {analysis && !analysisLoading && (
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+              <MarkdownContent content={analysis} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Version History */}
+      {versions.length > 1 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-slate-50">Version History</h2>
+            <Link
+              to={`/compare?ids=${versions.map((v) => v.id).join(",")}`}
+              className="text-xs text-blue-400 hover:text-blue-300"
+            >
+              Compare versions
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {versions.map((v) => (
+              <Link
+                key={v.id}
+                to={`/submissions/${v.id}`}
+                className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                  v.id === submission.id
+                    ? "bg-blue-600/10 border-blue-600/30"
+                    : "bg-slate-800/50 border-slate-700/50 hover:border-slate-600"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-700 text-slate-300">
+                    v{v.version}
+                  </span>
+                  <span className="text-sm text-slate-300">{v.display_name}</span>
+                  <StatusBadge status={v.status} />
+                </div>
+                <div className="flex items-center gap-4 text-xs text-slate-500">
+                  {v.avg_accuracy != null && (
+                    <span className="font-mono">{v.avg_accuracy.toFixed(4)}</span>
+                  )}
+                  <span>{new Date(v.created_at).toLocaleDateString()}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Code */}
@@ -212,6 +343,41 @@ export default function Detail() {
         </pre>
       </div>
     </div>
+  );
+}
+
+function MetricCard({ label, value, fmt, sub }: {
+  label: string;
+  value?: number;
+  fmt?: (v: number) => string;
+  sub?: string;
+}) {
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
+      <p className="text-xs text-slate-500 mb-1">{label}</p>
+      <p className="text-sm font-mono font-bold text-slate-50">
+        {value != null ? (fmt ? fmt(value) : value.toFixed(4)) : "-"}
+      </p>
+      {sub && <p className="text-xs text-slate-600 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  const html = content
+    .replace(/^### (.+)$/gm, '<h3 class="text-sm font-semibold text-slate-200 mt-4 mb-2">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 class="text-base font-semibold text-slate-100 mt-5 mb-2">$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-slate-200">$1</strong>')
+    .replace(/`([^`]+)`/g, '<code class="bg-slate-700 px-1 py-0.5 rounded text-xs">$1</code>')
+    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc text-slate-400">$1</li>')
+    .replace(/\n\n/g, '</p><p class="text-sm text-slate-400 mb-2">')
+    .replace(/\n/g, "<br/>");
+
+  return (
+    <div
+      className="text-sm text-slate-400 leading-relaxed"
+      dangerouslySetInnerHTML={{ __html: `<p class="text-sm text-slate-400 mb-2">${html}</p>` }}
+    />
   );
 }
 

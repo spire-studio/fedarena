@@ -6,8 +6,9 @@ export function exportPdf(submission: SubmissionDetail) {
 
   let avgHtml = "";
   if (results) {
-    const accs = Object.values(results)
-      .map((r) => r.avg_final_accuracy)
+    const accs = Object.entries(results)
+      .filter(([k]) => k !== "__summary__")
+      .map(([, r]) => r.avg_final_accuracy)
       .filter((a): a is number => a != null);
     const avg = accs.length ? accs.reduce((a, b) => a + b, 0) / accs.length : null;
     if (avg != null) {
@@ -69,26 +70,19 @@ export function exportPdf(submission: SubmissionDetail) {
 }
 
 function buildResultsTable(results: Record<string, OpponentResult>): string {
-  const entries = Object.entries(results);
+  const entries = Object.entries(results).filter(([k]) => k !== "__summary__");
   if (entries.length === 0) return "";
 
-  const multiSeed = entries.some(([, r]) => r.per_seed.length > 1);
-
-  let header = "<th>Opponent</th><th style='text-align:right'>Accuracy</th>";
-  if (multiSeed) header += "<th style='text-align:right'>Per Seed</th>";
+  const header = "<th>Opponent</th><th style='text-align:right'>Accuracy</th><th style='text-align:right'>Acc. Drop</th><th style='text-align:right'>Convergence</th><th style='text-align:right'>Stability</th>";
 
   let rows = "";
   for (const [opp, res] of entries) {
     const label = opp.replace("__none__", "none").replace("baseline_", "");
     const acc = res.avg_final_accuracy != null ? res.avg_final_accuracy.toFixed(4) : "FAIL";
-    rows += `<tr><td class="mono">${escapeHtml(label)}</td><td class="num">${acc}</td>`;
-    if (multiSeed) {
-      const seeds = res.per_seed
-        .map((s) => (s.final_accuracy != null ? s.final_accuracy.toFixed(4) : "fail"))
-        .join(", ");
-      rows += `<td class="num">${seeds}</td>`;
-    }
-    rows += "</tr>";
+    const drop = res.accuracy_drop != null ? res.accuracy_drop.toFixed(4) : "-";
+    const conv = res.avg_convergence_speed != null ? `${Math.round(res.avg_convergence_speed)}` : "-";
+    const stab = res.avg_stability != null ? res.avg_stability.toFixed(4) : "-";
+    rows += `<tr><td class="mono">${escapeHtml(label)}</td><td class="num">${acc}</td><td class="num">${drop}</td><td class="num">${conv}</td><td class="num">${stab}</td></tr>`;
   }
 
   return `<h2>Results</h2><table><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table>`;

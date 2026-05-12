@@ -20,6 +20,8 @@ class Submission(SQLModel, table=True):
     description: str | None = None
     code: str = Field(sa_column=Column(Text))
     status: str = Field(default="pending")  # pending | evaluating | completed | failed
+    method_group: str | None = Field(default=None, index=True)
+    version: int | None = None
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
@@ -34,7 +36,11 @@ class EvaluationJob(SQLModel, table=True):
     total_opponents: int = 0
     completed_opponents: int = 0
     current_opponent: str | None = None
+    total_scenarios: int = 0
+    completed_scenarios: int = 0
+    current_scenario: str | None = None
     results_json: str | None = None  # JSON string of full eval results
+    analysis_text: str | None = Field(default=None, sa_column=Column(Text))
     error: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None

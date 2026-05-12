@@ -106,6 +106,22 @@ def write_submission_files(method_name: str, class_name: str, role: str, code: s
     return sub_dir
 
 
+def compute_versioned_name(group: str, version: int) -> str:
+    """Return the actual method_name for a given group and version."""
+    if version <= 1:
+        return group
+    return f"{group}_v{version}"
+
+
+def rewrite_method_name_in_code(code: str, old_name: str, new_name: str) -> str:
+    """Replace method_name assignment value in strategy code."""
+    return re.sub(
+        r'(method_name\s*=\s*["\'])' + re.escape(old_name) + r'(["\'])',
+        r"\g<1>" + new_name + r"\2",
+        code,
+    )
+
+
 def remove_submission_files(method_name: str, role: str) -> None:
     """Remove submission directory."""
     import shutil

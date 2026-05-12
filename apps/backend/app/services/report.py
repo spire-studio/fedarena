@@ -30,7 +30,13 @@ def generate_markdown_report(
         lines.append("")
 
     if results:
-        _append_results(lines, results, role)
+        if "scenarios" in results:
+            for sc_id, sc_results in results["scenarios"].items():
+                lines.append(f"## Scenario: {sc_id}")
+                lines.append("")
+                _append_results(lines, sc_results, role)
+        else:
+            _append_results(lines, results, role)
 
     lines.append("## Code")
     lines.append("")
@@ -50,45 +56,47 @@ def _append_results(
     results: dict[str, Any],
     role: str,
 ) -> None:
-    accs = [r["avg_final_accuracy"] for r in results.values() if r.get("avg_final_accuracy") is not None]
+    summary = results.get("__summary__", {})
+    opponent_results = {k: v for k, v in results.items() if k != "__summary__"}
+
+    accs = [r["avg_final_accuracy"] for r in opponent_results.values() if r.get("avg_final_accuracy") is not None]
     avg = sum(accs) / len(accs) if accs else None
 
     lines.append("## Summary")
     lines.append("")
     if avg is not None:
         lines.append(f"- **Overall Average Accuracy:** {avg:.4f}")
-    lines.append(f"- **Opponents Evaluated:** {len(results)}")
+    if summary.get("avg_accuracy_drop") is not None:
+        lines.append(f"- **Average Accuracy Drop:** {summary['avg_accuracy_drop']:.4f}")
+    if summary.get("worst_case_accuracy") is not None:
+        lines.append(f"- **Worst-Case Accuracy:** {summary['worst_case_accuracy']:.4f}")
+    if summary.get("avg_convergence_speed") is not None:
+        lines.append(f"- **Average Convergence Speed:** {summary['avg_convergence_speed']:.1f} rounds")
+    if summary.get("avg_stability") is not None:
+        lines.append(f"- **Average Stability (std):** {summary['avg_stability']:.4f}")
+    if summary.get("avg_runtime_seconds") is not None:
+        lines.append(f"- **Average Runtime:** {summary['avg_runtime_seconds']:.1f}s")
+    lines.append(f"- **Opponents Evaluated:** {len(opponent_results)}")
     interpretation = "lower = stronger attack" if role == "attack" else "higher = stronger defense"
     lines.append(f"- **Interpretation:** {interpretation}")
     lines.append("")
 
-    multi_seed = any(len(r.get("per_seed", [])) > 1 for r in results.values())
-
     lines.append("## Per-Opponent Results")
     lines.append("")
+    lines.append("| Opponent | Accuracy | Acc. Drop | Convergence | Stability |")
+    lines.append("|----------|----------|-----------|-------------|-----------|")
 
-    if multi_seed:
-        lines.append("| Opponent | Avg Accuracy | Per Seed |")
-        lines.append("|----------|-------------|----------|")
-    else:
-        lines.append("| Opponent | Accuracy |")
-        lines.append("|----------|----------|")
-
-    for opp, res in results.items():
+    for opp, res in opponent_results.items():
         opp_label = opp.replace("__none__", "none").replace("baseline_", "")
         acc_str = f"{res['avg_final_accuracy']:.4f}" if res.get("avg_final_accuracy") is not None else "FAIL"
-        if multi_seed:
-            seeds_str = ", ".join(
-                f"{s['final_accuracy']:.4f}" if s.get("final_accuracy") is not None else "fail"
-                for s in res.get("per_seed", [])
-            )
-            lines.append(f"| {opp_label} | {acc_str} | {seeds_str} |")
-        else:
-            lines.append(f"| {opp_label} | {acc_str} |")
+        drop_str = f"{res['accuracy_drop']:.4f}" if res.get("accuracy_drop") is not None else "-"
+        conv_str = f"{res['avg_convergence_speed']:.0f}" if res.get("avg_convergence_speed") is not None else "-"
+        stab_str = f"{res['avg_stability']:.4f}" if res.get("avg_stability") is not None else "-"
+        lines.append(f"| {opp_label} | {acc_str} | {drop_str} | {conv_str} | {stab_str} |")
 
     lines.append("")
 
-    _append_trajectories(lines, results)
+    _append_trajectories(lines, opponent_results)
 
 
 def _append_trajectories(

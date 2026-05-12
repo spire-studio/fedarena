@@ -3,30 +3,31 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from ...schemas import MatrixResponse
 
 router = APIRouter(prefix="/matrix", tags=["matrix"])
 
-MATRIX_PATH = Path(__file__).resolve().parents[5] / "results" / "arena" / "benchmark_matrix.json"
-
 
 @router.get("", response_model=MatrixResponse)
-async def get_matrix():
-    """Return the benchmark matrix."""
-    if not MATRIX_PATH.exists():
+async def get_matrix(scenario: str = Query("cifar10_noniid")):
+    """Return the benchmark matrix for a given scenario."""
+    from fl_core.research.scenarios import get_matrix_path_with_fallback
+
+    matrix_path = get_matrix_path_with_fallback(scenario)
+    if matrix_path is None:
         raise HTTPException(
             404,
-            "Benchmark matrix not found. Run 'arena generate' first.",
+            f"Benchmark matrix not found for scenario '{scenario}'. Run 'arena generate --scenario {scenario}' first.",
         )
-    data = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
+    data = json.loads(matrix_path.read_text(encoding="utf-8"))
     return MatrixResponse(
         attacks=data.get("attacks", []),
         defenses=data.get("defenses", []),
         matrix=data.get("matrix", {}),
         config=data.get("config"),
         seeds=data.get("seeds"),
+        scenario_id=scenario,
     )
