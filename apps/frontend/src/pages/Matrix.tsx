@@ -22,6 +22,7 @@ export default function Matrix({ compareEntry, onClearCompare, scenario }: Matri
   const [selected, setSelected] = useState<SelectedCell | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetching pattern
     setLoading(true);
     setError(null);
     api

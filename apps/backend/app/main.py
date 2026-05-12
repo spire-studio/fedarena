@@ -56,9 +56,9 @@ async def _recover_stale_jobs() -> None:
 
 async def _migrate_schema() -> None:
     """Add columns introduced after the initial schema."""
-    from .db import engine
-
     from sqlalchemy import text
+
+    from .db import engine
 
     async with engine.begin() as conn:
         for stmt in [

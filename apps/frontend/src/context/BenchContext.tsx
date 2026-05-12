@@ -42,7 +42,7 @@ export function BenchProvider({ children }: { children: ReactNode }) {
       });
     }, 2000);
     return () => clearInterval(interval);
-  }, [activeJob?.id, activeJob?.status, refreshHistory]);
+  }, [activeJob, refreshHistory]);
 
   const submit = useCallback(async () => {
     if (!prompt.trim()) return;
@@ -68,6 +68,7 @@ export function BenchProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useBench() {
   const ctx = useContext(BenchContext);
   if (!ctx) throw new Error("useBench must be used within BenchProvider");

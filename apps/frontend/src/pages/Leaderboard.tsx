@@ -63,6 +63,7 @@ export default function Leaderboard() {
   useEffect(() => {
     if (!role) return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetching pattern
     setLoading(true);
     setError(null);
     api

@@ -31,7 +31,7 @@ export default function BenchDetail() {
       api.getBenchJob(job.id).then(setJob).catch(() => {});
     }, 2000);
     return () => clearInterval(interval);
-  }, [job?.id, job?.status]);
+  }, [job]);
 
   if (error) return <p className="text-red-400">{error}</p>;
   if (!job) return <p className="text-slate-400">Loading...</p>;

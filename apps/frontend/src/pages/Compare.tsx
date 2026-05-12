@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   LineChart,
   Line,
@@ -32,15 +32,20 @@ export default function Compare() {
   }, []);
 
   useEffect(() => {
-    if (selectedIds.length === 0) {
-      setDetails([]);
-      return;
-    }
+    if (selectedIds.length === 0) return;
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetching pattern
     setLoading(true);
     Promise.all(selectedIds.map((id) => api.getSubmission(id)))
-      .then(setDetails)
-      .finally(() => setLoading(false));
+      .then((d) => { if (!cancelled) setDetails(d); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [selectedIds]);
+
+  const filteredDetails = useMemo(
+    () => details.filter((d) => selectedIds.includes(d.id)),
+    [details, selectedIds],
+  );
 
   const toggle = (id: number) => {
     setSelectedIds((prev) =>
@@ -61,8 +66,8 @@ export default function Compare() {
     return d.results as Record<string, OpponentResult>;
   };
 
-  const comparisonTable = details.length >= 2 ? buildComparisonTable(details, extractResults) : null;
-  const overlayData = details.length >= 2 ? buildOverlayChart(details, extractResults, metric) : null;
+  const comparisonTable = filteredDetails.length >= 2 ? buildComparisonTable(filteredDetails, extractResults) : null;
+  const overlayData = filteredDetails.length >= 2 ? buildOverlayChart(filteredDetails, extractResults, metric) : null;
 
   return (
     <div>
@@ -106,7 +111,7 @@ export default function Compare() {
         )}
       </div>
 
-      {details.length < 2 && !loading && (
+      {filteredDetails.length < 2 && !loading && (
         <p className="text-sm text-slate-500">Select at least 2 submissions to compare.</p>
       )}
 
@@ -184,7 +189,7 @@ export default function Compare() {
                     labelStyle={{ color: "#94a3b8" }}
                   />
                   <Legend />
-                  {details.map((d, i) => (
+                  {filteredDetails.map((d, i) => (
                     <Line
                       key={d.id}
                       type="monotone"

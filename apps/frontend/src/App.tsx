@@ -120,12 +120,10 @@ function App() {
 }
 
 function SidebarNav() {
-  let lastSection = "";
   return (
     <div className="space-y-1">
-      {NAV_ITEMS.map((item) => {
-        const showSection = item.section !== lastSection;
-        lastSection = item.section;
+      {NAV_ITEMS.map((item, i) => {
+        const showSection = i === 0 || item.section !== NAV_ITEMS[i - 1].section;
         return (
           <div key={item.to}>
             {showSection && (
